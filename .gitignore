@@ -1,0 +1,37 @@
+# =====================
+# ENVIRONNEMENT PYTHON
+# =====================
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# =====================
+# VARIABLES SENSIBLES
+# =====================
+.env
+*.env
+
+# =====================
+# DONNÉES (DATA ENGINEERING)
+# =====================
+data/
+logs/
+*.csv
+*.json
+
+# =====================
+# IDE / EDITORS
+# =====================
+.vscode/
+.idea/
+*.swp
+
+# =====================
+# SYSTEM FILES
+# =====================
+.DS_Store
+Thumbs.db
