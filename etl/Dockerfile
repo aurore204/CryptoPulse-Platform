@@ -1,12 +1,19 @@
-FROM python:3.11-slim
+# Étape 1 : builder 
+FROM python:3.11-slim AS builder
 
-# Dossier de travail dans le conteneur
 WORKDIR /app
 
-# Installation des dépendances
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --target=/app/packages -r requirements.txt
 
-# Copie du code ETL
-COPY etl/ .
+#Étape 2 : image finale 
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY --from=builder /app/packages /app/packages
+COPY etl/ /app/
+
+ENV PYTHONPATH=/app/packages
+
 CMD ["python3", "extract.py"]
