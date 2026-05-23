@@ -91,6 +91,8 @@ except psycopg2.Error as e:
     print(f"Erreur SQL : {e}")
 
 finally:
-    cursor.close()  # ← s'exécute TOUJOURS, même si ça a planté
-    conn.close()
+    if 'cursor' in locals():  # vérifie que cursor existe avant de le fermer
+        cursor.close()
+    if 'conn' in locals():    
+        conn.close()
 print(f"{len(df)} cryptos stockées dans PostgreSQL !")
