@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config-map
+data:
+  DB_NAME: cryptopulse
+  DB_HOST: localhost
+  DB_PORT: "5432"

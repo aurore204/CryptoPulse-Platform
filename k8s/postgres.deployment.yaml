@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres          # nom du Deployment
+spec:
+  replicas: 1             
+  selector:
+    matchLabels:
+      app: postgres       # relie le Deployment aux Pods qui ont ce label
+  template:
+    metadata:
+      labels:
+        app: postgres     
+      containers:
+      - name: postgres
+        image: postgres:15-alpine    
+        envFrom:
+        - name: Secret
+        ports:
+        - containerPort: 5432    # port PostgreSQL dans le conteneur
+        volumeMounts:
+        - name: init-sql
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: init-sql
+        configMap:
+          name: postgres-init   # le ConfigMap qu'on vient de créer

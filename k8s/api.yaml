@@ -15,7 +15,6 @@ spec:
       containers:
       - name: api
         image: cryptopulse-api:latest  # image Docker de l'API
-        imagePullPolicy: Never         # utilise l'image locale
         env:
         - name: DB_HOST
           value: "postgres-service"    # nom du Service PostgreSQL

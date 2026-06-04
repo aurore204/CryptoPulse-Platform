@@ -1,19 +1,54 @@
 from fastapi import FastAPI  # Framework pour créer l'API REST
-import psycopg2              # Pour se connecter à PostgreSQL (même lib que dans l'ETL)
-import os                    # Pour lire les variables d'environnement (DB_HOST, DB_NAME...)
+import psycopg2              # Pour se connecter à PostgreSQL 
+import os                    # Pour lire les variables d'environnement 
 from dotenv import load_dotenv  # Pour charger le fichier .env
-
-# Remonte d'un dossier depuis api/main.py pour trouver le .env à la racine du projet
+import math
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-# Crée l'application FastAPI — tout s'accroche à cette variable
+# Crée l'application FastAPI 
 app = FastAPI()
 
-# Endpoint de base — accessible sur http://localhost:8000/
+def clean_nan(rows):
+    """Remplace tous les NaN, Inf et convertit les Decimal pour le JSON"""
+    from decimal import Decimal
+    import math
+    
+    result = []
+    for row in rows:
+        clean_row = {}
+        for k, v in row.items():
+            # 1. Gestion des valeurs nulles (None)
+            if v is None:
+                clean_row[k] = None
+                
+            # 2. Gestion des Float (NaN / Inf)
+            elif isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                clean_row[k] = None
+                
+            # 3. CORRECTION : Gestion des Decimal 
+            elif isinstance(v, Decimal):
+                if v.is_nan() or v.is_infinite():
+                    clean_row[k] = None
+                else:
+                    clean_row[k] = float(v)  
+                    
+            # 4. Autres types standards compatibles JSON
+            elif isinstance(v, (int, str, bool)):
+                clean_row[k] = v
+                
+            else:
+                try:
+                    clean_row[k] = str(v)
+                except:
+                    clean_row[k] = None
+                    
+        result.append(clean_row)
+    return result
+
 # @app.get("/") = quand quelqu'un appelle cette URL, exécute la fonction en dessous
 @app.get("/")
 def home():
-    return {"message": "CryptoPulse API fonctionne !"}  # Retourné automatiquement en JSON
+    return {"message": "CryptoPulse API fonctionne !"}  
 @app.get("/data/raw")
 def get_raw_data():
     # Connexion à PostgreSQL avec les variables du .env (même chose que dans l'ETL)
@@ -36,9 +71,8 @@ def get_raw_data():
 
     # Associe chaque valeur à son nom de colonne
     result = [dict(zip(columns, row)) for row in rows]
-    # zip(columns, row) = [("name", "Bitcoin"), ("symbol", "btc"), ...]
-    # dict(...) = {"name": "Bitcoin", "symbol": "btc", ...}
 
+    result = clean_nan(result)
     cursor.close()
     conn.close()
 
@@ -69,7 +103,7 @@ def get_clean_data():
     rows = cursor.fetchall()
     columns = [desc[0] for desc in cursor.description]
     result = [dict(zip(columns, row)) for row in rows]
-
+    result = clean_nan(result)
     cursor.close()
     conn.close()
 
@@ -85,41 +119,47 @@ def get_stats():
     )
     cursor = conn.cursor()
 
-    # Crypto qui a le plus augmenté en 24h
     cursor.execute("""
         SELECT DISTINCT ON (symbol) name, symbol, price_change_percentage_24h
         FROM crypto_prices
         ORDER BY symbol, last_updated DESC
     """)
     rows = cursor.fetchall()
-    # Trier en Python pour trouver le max et le min
     sorted_by_change = sorted(rows, key=lambda x: x[2] if x[2] else 0, reverse=True)
-    best_performer  = {"name": sorted_by_change[0][0],  "symbol": sorted_by_change[0][1],  "change_24h": sorted_by_change[0][2]}
-    worst_performer = {"name": sorted_by_change[-1][0], "symbol": sorted_by_change[-1][1], "change_24h": sorted_by_change[-1][2]}
 
-    # Prix moyen, volume total, market cap total
     cursor.execute("""
         SELECT
-            ROUND(AVG(current_price)::numeric, 2),  -- prix moyen de toutes les cryptos
-            SUM(total_volume),                       -- volume total du marché
-            SUM(market_cap)                          -- capitalisation totale du marché
+            ROUND(AVG(current_price)::numeric, 2),
+            SUM(total_volume),
+            SUM(market_cap)
         FROM (
             SELECT DISTINCT ON (symbol) current_price, total_volume, market_cap
             FROM crypto_prices
             ORDER BY symbol, last_updated DESC
         ) latest
     """)
-    row = cursor.fetchone()  # fetchone() = récupère UNE seule ligne (on a qu'un résultat)
+    row = cursor.fetchone()
 
     cursor.close()
     conn.close()
 
+    # Convertit Decimal en float et NaN en None
+    def safe(v):
+        from decimal import Decimal
+        if isinstance(v, float) and math.isnan(v):
+            return None
+        if isinstance(v, Decimal):
+            return float(v)
+        return v
+
     return {
-        "best_performer":  best_performer,   # crypto qui a le plus monté
-        "worst_performer": worst_performer,  # crypto qui a le plus baissé
+        "best_performer":  {"name": sorted_by_change[0][0],  "symbol": sorted_by_change[0][1],  "change_24h": safe(sorted_by_change[0][2])},
+        "worst_performer": {"name": sorted_by_change[-1][0], "symbol": sorted_by_change[-1][1], "change_24h": safe(sorted_by_change[-1][2])},
         "market": {
-            "average_price":      row[0],  # prix moyen
-            "total_volume":       row[1],  # volume total
-            "total_market_cap":   row[2],  # capitalisation totale
+            "average_price":    safe(row[0]),
+            "total_volume":     safe(row[1]),
+            "total_market_cap": safe(row[2]),
         }
     }
+    # Prix moyen, volume total, market cap total
+  
