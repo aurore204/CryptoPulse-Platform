@@ -1,27 +1,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: postgres          # nom du Deployment
+  name: postgres
+  namespace: cryptopulse
 spec:
-  replicas: 1             
+  replicas: 1
   selector:
     matchLabels:
-      app: postgres       # relie le Deployment aux Pods qui ont ce label
+      app: postgres
   template:
     metadata:
       labels:
-        app: postgres     
+        app: postgres
+    spec:
       containers:
       - name: postgres
-        image: postgres:15-alpine    
+        image: postgres:15-alpine
         envFrom:
-        - name: Secret
+        - configMapRef:
+            name: postgres-config-map  
+        - secretRef:
+            name: crypto-secret        
         ports:
-        - containerPort: 5432    # port PostgreSQL dans le conteneur
+        - containerPort: 5432
         volumeMounts:
         - name: init-sql
-          mountPath: /docker-entrypoint-initdb.d
+          mountPath: /docker-entrypoint-initdb.d  # PostgreSQL exécute ce SQL au démarrage
       volumes:
       - name: init-sql
         configMap:
-          name: postgres-init   # le ConfigMap qu'on vient de créer
+          name: postgres-init           # contient init.sql
