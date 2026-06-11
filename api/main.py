@@ -1,165 +1,238 @@
-from fastapi import FastAPI  # Framework pour créer l'API REST
-import psycopg2              # Pour se connecter à PostgreSQL 
-import os                    # Pour lire les variables d'environnement 
-from dotenv import load_dotenv  # Pour charger le fichier .env
+from fastapi import FastAPI, Query, HTTPException  # Framework et outils de validation
+import psycopg2                              # Pour se connecter à PostgreSQL 
+import os                                    # Pour lire les variables d'environnement 
+from dotenv import load_dotenv               # Pour charger le fichier .env
 import math
+from decimal import Decimal
+
+# Chargement du fichier .env pour le développement local
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-# Crée l'application FastAPI 
-app = FastAPI()
+# Centralisation et harmonisation des variables d'environnement (Compatible Local & K8s)
+DB_HOST = os.environ.get("DB_HOST", os.getenv("DB_HOST", "localhost"))
+DB_PORT = os.environ.get("DB_PORT", os.getenv("DB_PORT", "5432"))
+DB_NAME = os.environ.get("POSTGRES_DB", os.getenv("DB_NAME", "cryptopulse"))
+DB_USER = os.environ.get("POSTGRES_USER", os.getenv("DB_USER"))
+DB_PASSWORD = os.environ.get("POSTGRES_PASSWORD", os.getenv("DB_PASSWORD"))
+
+# Initialisation de l'application FastAPI avec métadonnées professionnelles
+app = FastAPI(
+    title="CryptoPulse Rest API",
+    description="API de production pour le suivi et l'analyse des cours de cryptomonnaies.",
+    version="1.0.0"
+)
+
+# FONCTIONS UTILITAIRES
+
+def get_db_connection():
+    """Génère une connexion propre à la base de données PostgreSQL."""
+    return psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
 
 def clean_nan(rows):
-    """Remplace tous les NaN, Inf et convertit les Decimal pour le JSON"""
-    from decimal import Decimal
-    import math
-    
+    """Sécurise les données avant la sérialisation JSON (gère les NaN, Inf et Decimals)."""
     result = []
     for row in rows:
         clean_row = {}
         for k, v in row.items():
-            # 1. Gestion des valeurs nulles (None)
             if v is None:
                 clean_row[k] = None
-                
-            # 2. Gestion des Float (NaN / Inf)
             elif isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
                 clean_row[k] = None
-                
-            # 3. CORRECTION : Gestion des Decimal 
             elif isinstance(v, Decimal):
                 if v.is_nan() or v.is_infinite():
                     clean_row[k] = None
                 else:
                     clean_row[k] = float(v)  
-                    
-            # 4. Autres types standards compatibles JSON
             elif isinstance(v, (int, str, bool)):
                 clean_row[k] = v
-                
             else:
                 try:
                     clean_row[k] = str(v)
                 except:
                     clean_row[k] = None
-                    
         result.append(clean_row)
     return result
 
-# @app.get("/") = quand quelqu'un appelle cette URL, exécute la fonction en dessous
-@app.get("/")
-def home():
-    return {"message": "CryptoPulse API fonctionne !"}  
-@app.get("/data/raw")
-def get_raw_data():
-    # Connexion à PostgreSQL avec les variables du .env (même chose que dans l'ETL)
-    conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
-    cursor = conn.cursor()
+@app.get("/", tags=["System"])
+def health_check():
+    """Vérifie l'état de santé basique de l'API."""
+    return {"status": "healthy", "service": "CryptoPulse API", "version": "1.0.0"}
 
-    # Récupère toutes les lignes de la table
-    cursor.execute("SELECT * FROM crypto_prices ORDER BY last_updated DESC")
-    rows = cursor.fetchall()  # fetchall() = récupère TOUS les résultats
 
-      # Récupère les noms des colonnes depuis le curseur
-    columns = [desc[0] for desc in cursor.description]
-    # cursor.description contient les infos de chaque colonne
-    # desc[0] = le nom de la colonne
+# SECTION : PRICES (Gestion des cours de cryptomonnaies)
 
-    # Associe chaque valeur à son nom de colonne
-    result = [dict(zip(columns, row)) for row in rows]
-
-    result = clean_nan(result)
-    cursor.close()
-    conn.close()
-
-    # Retourne les données en JSON
-    return {"data": result}
-
-@app.get("/data/clean")
-def get_clean_data():
-    conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
-    cursor = conn.cursor()
-
-    # Seulement les colonnes utiles, et seulement le dernier prix de chaque crypto
-    cursor.execute("""
-        SELECT DISTINCT ON (symbol)
-            name, symbol, current_price,
-            market_cap, total_volume,
-            high_24h, low_24h,
-            price_change_percentage_24h,
-            last_updated
-        FROM crypto_prices
-        ORDER BY symbol, last_updated DESC
-    """)
-    rows = cursor.fetchall()
-    columns = [desc[0] for desc in cursor.description]
-    result = [dict(zip(columns, row)) for row in rows]
-    result = clean_nan(result)
-    cursor.close()
-    conn.close()
-
-    return {"data": result}
-
-@app.get("/stats")
-def get_stats():
-    conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT DISTINCT ON (symbol) name, symbol, price_change_percentage_24h
-        FROM crypto_prices
-        ORDER BY symbol, last_updated DESC
-    """)
-    rows = cursor.fetchall()
-    sorted_by_change = sorted(rows, key=lambda x: x[2] if x[2] else 0, reverse=True)
-
-    cursor.execute("""
-        SELECT
-            ROUND(AVG(current_price)::numeric, 2),
-            SUM(total_volume),
-            SUM(market_cap)
-        FROM (
-            SELECT DISTINCT ON (symbol) current_price, total_volume, market_cap
+@app.get("/api/v1/prices", tags=["Prices"])
+def get_latest_prices(
+    page: int = Query(1, ge=1, description="Numéro de la page à afficher"),
+    limit: int = Query(20, ge=1, le=100, description="Nombre de résultats par page")
+):
+    """
+    **ENDPOINT 1 :** Récupère le dernier snapshot des prix du marché avec pagination SQL.
+    """
+    offset = (page - 1) * limit
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Requête pro : DISTINCT ON pour n'avoir que la dernière ligne par crypto, combiné avec LIMIT/OFFSET
+        cursor.execute("""
+            SELECT DISTINCT ON (symbol)
+                name, symbol, current_price, market_cap, total_volume,
+                high_24h, low_24h, price_change_percentage_24h, last_updated
             FROM crypto_prices
             ORDER BY symbol, last_updated DESC
-        ) latest
-    """)
-    row = cursor.fetchone()
+            LIMIT %s OFFSET %s
+        """, (limit, offset))
+        
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        result = [dict(zip(columns, row)) for row in rows]
+        
+        cursor.close()
+        conn.close()
+        return {"page": page, "limit": limit, "count": len(result), "data": clean_nan(result)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur base de données : {str(e)}")
 
-    cursor.close()
-    conn.close()
 
-    # Convertit Decimal en float et NaN en None
-    def safe(v):
-        from decimal import Decimal
-        if isinstance(v, float) and math.isnan(v):
-            return None
-        if isinstance(v, Decimal):
-            return float(v)
-        return v
+@app.get("/api/v1/prices/{symbol}", tags=["Prices"])
+def get_crypto_detail(symbol: str):
+    """
+    **ENDPOINT 2 :** Récupère les détails en temps réel d'une seule cryptomonnaie cible via son symbole (ex: btc, eth).
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT name, symbol, current_price, market_cap, total_volume,
+                   high_24h, low_24h, price_change_percentage_24h, last_updated
+            FROM crypto_prices
+            WHERE LOWER(symbol) = %s
+            ORDER BY last_updated DESC
+            LIMIT 1
+        """, (symbol.lower(),))
+        
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Cryptomonnaie '{symbol}' introuvable en base.")
+            
+        columns = [desc[0] for desc in cursor.description]
+        result = dict(zip(columns, row))
+        
+        cursor.close()
+        conn.close()
+        return {"data": clean_nan([result])[0]}
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Erreur SQL : {str(e)}")
 
-    return {
-        "best_performer":  {"name": sorted_by_change[0][0],  "symbol": sorted_by_change[0][1],  "change_24h": safe(sorted_by_change[0][2])},
-        "worst_performer": {"name": sorted_by_change[-1][0], "symbol": sorted_by_change[-1][1], "change_24h": safe(sorted_by_change[-1][2])},
-        "market": {
-            "average_price":    safe(row[0]),
-            "total_volume":     safe(row[1]),
-            "total_market_cap": safe(row[2]),
+
+@app.get("/api/v1/prices/{symbol}/history", tags=["Prices"])
+def get_crypto_history(symbol: str, limit: int = Query(30, ge=1, le=500, description="Nombre de points historiques requis")):
+    """
+    **ENDPOINT 3 :** Récupère la série temporelle (historique) d'une crypto pour tracer des graphiques.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # On remonte l'historique chronologique pour ce symbole précis
+        cursor.execute("""
+            SELECT last_updated, current_price, total_volume, market_cap
+            FROM crypto_prices
+            WHERE LOWER(symbol) = %s
+            ORDER BY last_updated DESC
+            LIMIT %s
+        """, (symbol.lower(), limit))
+        
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        
+        # Inverser les résultats pour les renvoyer dans le sens chronologique (du plus vieux au plus récent)
+        result = [dict(zip(columns, row)) for row in rows][::-1]
+        
+        cursor.close()
+        conn.close()
+        return {"symbol": symbol.upper(), "data_points": len(result), "history": clean_nan(result)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la récupération de l'historique : {str(e)}")
+
+
+# SECTION : MARKET (Analytique et indicateurs globaux du marché)
+
+@app.get("/api/v1/market/summary", tags=["Market"])
+def get_market_summary():
+    """
+    **ENDPOINT 4 :** Calcule les KPI globaux de santé globale du marché (Volume global, Market Cap Global, Prix Moyen).
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT
+                ROUND(AVG(current_price)::numeric, 2) as average_price,
+                SUM(total_volume) as total_volume,
+                SUM(market_cap) as total_market_cap
+            FROM (
+                SELECT DISTINCT ON (symbol) current_price, total_volume, market_cap
+                FROM crypto_prices
+                ORDER BY symbol, last_updated DESC
+            ) latest
+        """)
+        row = cursor.fetchone()
+        columns = [desc[0] for desc in cursor.description]
+        result = dict(zip(columns, row))
+        
+        cursor.close()
+        conn.close()
+        return {"market_summary": clean_nan([result])[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur d'agrégation de marché : {str(e)}")
+
+
+@app.get("/api/v1/market/performers", tags=["Market"])
+def get_market_performers():
+    """
+    **ENDPOINT 5 :** Identifie les extrêmes du marché des dernières 24h (Top Gainer et Top Loser).
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT DISTINCT ON (symbol) name, symbol, price_change_percentage_24h, current_price
+            FROM crypto_prices
+            ORDER BY symbol, last_updated DESC
+        """)
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        all_cryptos = [dict(zip(columns, row)) for row in rows]
+        
+        # Tri des performances en ignorant les valeurs None
+        sorted_cryptos = sorted(
+            [c for c in all_cryptos if c['price_change_percentage_24h'] is not None],
+            key=lambda x: x['price_change_percentage_24h'],
+            reverse=True
+        )
+        
+        cursor.close()
+        conn.close()
+        
+        if not sorted_cryptos:
+            return {"top_gainer": None, "top_loser": None}
+            
+        return {
+            "top_gainer": clean_nan([sorted_cryptos[0]])[0],
+            "top_loser": clean_nan([sorted_cryptos[-1]])[0]
         }
-    }
-    # Prix moyen, volume total, market cap total
-  
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur de calcul de performance : {str(e)}")

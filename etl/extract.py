@@ -8,6 +8,11 @@ pd.set_option('display.width', None)        # Pas de limite de largeur
 from datetime import datetime
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+DB_HOST = os.environ.get("DB_HOST", os.getenv("DB_HOST", "localhost"))
+DB_PORT = os.environ.get("DB_PORT", os.getenv("DB_PORT", "5432"))
+DB_NAME = os.environ.get("POSTGRES_DB", os.getenv("DB_NAME", "cryptopulse"))
+DB_USER = os.environ.get("POSTGRES_USER", os.getenv("DB_USER"))
+DB_PASSWORD = os.environ.get("POSTGRES_PASSWORD", os.getenv("DB_PASSWORD"))
 # ETL - Extraction des données crypto
 # URL de l'API CoinGecko - GRATUIT
 url = "https://api.coingecko.com/api/v3/coins/markets"
@@ -51,10 +56,11 @@ df['price_change_percentage_24h'] = df['price_change_percentage_24h'].round(2)
 # Connexion à PostgreSQL
 try:
     conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
     )
     cursor = conn.cursor()#cursor qui pemet d'ecrire les données dans la bd
 
@@ -82,17 +88,20 @@ try:
         ))
 
         conn.commit()# Valider les changements dans la base de données
+        print(f"{len(df)} cryptos stockées dans PostgreSQL avec succès !")
 
 except psycopg2.OperationalError as e:
     print(f"Connexion impossible à PostgreSQL : {e}")  # ex: mauvais mot de passe
+    raise e
 
 except psycopg2.Error as e:
-    conn.rollback()  # ← annule tout si une insertion a planté à mi-chemin
+    if 'conn' in locals():
+        conn.rollback()  
     print(f"Erreur SQL : {e}")
+    raise e
 
 finally:
     if 'cursor' in locals():  # vérifie que cursor existe avant de le fermer
         cursor.close()
     if 'conn' in locals():    
         conn.close()
-print(f"{len(df)} cryptos stockées dans PostgreSQL !")
