@@ -73,7 +73,7 @@ def get_latest_prices(
     limit: int = Query(20, ge=1, le=100, description="Nombre de résultats par page")
 ):
     """
-    **ENDPOINT 1 :** Récupère le dernier snapshot des prix du marché avec pagination SQL.
+    **ENDPOINT 1 :** API va chercher le dernier prix connu pour chaque crypto.
     """
     offset = (page - 1) * limit
     try:
