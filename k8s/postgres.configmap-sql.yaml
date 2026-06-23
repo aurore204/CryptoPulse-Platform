@@ -5,9 +5,16 @@ metadata:
   namespace: cryptopulse
 data:
   init.sql: |               # Et voici le script SQL virtuel
-    CREATE TABLE IF NOT EXISTS crypto_data (
+    CREATE TABLE IF NOT EXISTS crypto_prices (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(50),
-        price NUMERIC,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        name VARCHAR(100),
+        symbol VARCHAR(20) NOT NULL,
+        current_price NUMERIC,
+        market_cap NUMERIC,
+        total_volume NUMERIC,
+        high_24h NUMERIC,
+        low_24h NUMERIC,
+        price_change_percentage_24h NUMERIC,
+        last_updated TIMESTAMP NOT NULL,
+        CONSTRAINT unique_symbol_timestamp UNIQUE (symbol, last_updated)
     );

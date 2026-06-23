@@ -7,13 +7,13 @@ metadata:
     kubernetes.io/ingress.class: traefik # Dit explicitement à K8s que c'est Traefik qui gère ça
 spec:
   rules:
-  - host: api.cryptopulse.local  # Le nom de domaine virtuel de l' API
+  - host: api.cryptopulse.local  # Le nom de domaine virtuel de l'API
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
-        service:
-            name: api-service
-            port:
+          service: # Correction ici : imbriqué sous backend
+            name: api-service # Correction ici : imbriqué sous service
+            port: # Correction ici : imbriqué sous service
               number: 8000
