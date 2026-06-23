@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init    
+  namespace: cryptopulse
+data:
+  init.sql: |               # Et voici le script SQL virtuel
+    CREATE TABLE IF NOT EXISTS crypto_data (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50),
+        price NUMERIC,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );

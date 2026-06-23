@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etl
+  namespace: cryptopulse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etl
+  template:
+    metadata:
+      labels:
+        app: etl
+    spec:
+      containers:
+      - name: etl
+        image: cryptopulse-etl:latest
+        imagePullPolicy: Never # utilise l'image locale
+        envFrom:
+        - configMapRef:
+            name: postgres-config-map  
+        - secretRef:
+            name: crypto-secret       

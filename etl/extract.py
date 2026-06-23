@@ -8,6 +8,11 @@ pd.set_option('display.width', None)        # Pas de limite de largeur
 from datetime import datetime
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+DB_HOST = os.environ.get("DB_HOST", os.getenv("DB_HOST", "localhost"))
+DB_PORT = os.environ.get("DB_PORT", os.getenv("DB_PORT", "5432"))
+DB_NAME = os.environ.get("POSTGRES_DB", os.getenv("DB_NAME", "cryptopulse"))
+DB_USER = os.environ.get("POSTGRES_USER", os.getenv("DB_USER"))
+DB_PASSWORD = os.environ.get("POSTGRES_PASSWORD", os.getenv("DB_PASSWORD"))
 # ETL - Extraction des données crypto
 # URL de l'API CoinGecko - GRATUIT
 url = "https://api.coingecko.com/api/v3/coins/markets"
@@ -22,6 +27,7 @@ params = {
 
 print("Chargement des données crypto...")
 response = requests.get(url, params=params)
+response.raise_for_status()  # Vérifie que la requête a réussi (code 200)
 data = response.json()#.json() pour convertir la réponse en format JSON (dictionnaire Python)
 print(f"Succès ! {len(data)} cryptos chargées")# len permet de compter
     
@@ -48,36 +54,54 @@ df['price_change_percentage_24h'] = df['price_change_percentage_24h'].round(2)
 
 #  LOAD 
 # Connexion à PostgreSQL
-conn = psycopg2.connect(
-     host=os.getenv("DB_HOST"),
-    database=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD")
-)
-cursor = conn.cursor()#cursor qui pemet d'ecrire les données dans la bd
+try:
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+    cursor = conn.cursor()#cursor qui pemet d'ecrire les données dans la bd
 
 # Insérer chaque ligne du tableau dans la base
-for _, row in df.iterrows():
-    cursor.execute("""
-        INSERT INTO crypto_prices (
-            name, symbol, current_price, market_cap,
-            total_volume, high_24h, low_24h,
-            price_change_percentage_24h, last_updated
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        row['name'],
-        row['symbol'],
-        row['current_price'],
-        row['market_cap'],
-        row['total_volume'],
-        row['high_24h'],
-        row['low_24h'],
-        row['price_change_percentage_24h'],
-        row['last_updated']
-    ))
+    for _, row in df.iterrows():
+        cursor.execute("""
+            INSERT INTO crypto_prices (
+                name, symbol, current_price, market_cap,
+                total_volume, high_24h, low_24h,
+                price_change_percentage_24h, last_updated
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, last_updated) DO UPDATE SET 
+            current_price = EXCLUDED.current_price
+        """ 
+            , (
+            row['name'],
+            row['symbol'],
+            row['current_price'],
+            row['market_cap'],
+            row['total_volume'],
+            row['high_24h'],
+            row['low_24h'],
+            row['price_change_percentage_24h'],
+            row['last_updated']
+        ))
 
-conn.commit()# Valider les changements dans la base de données
-cursor.close()#fermer l'ecriture en bd
-conn.close()# fermer la connexion à la base de données
+        conn.commit()# Valider les changements dans la base de données
+        print(f"{len(df)} cryptos stockées dans PostgreSQL avec succès !")
 
-print(f"{len(df)} cryptos stockées dans PostgreSQL !")
+except psycopg2.OperationalError as e:
+    print(f"Connexion impossible à PostgreSQL : {e}")  # ex: mauvais mot de passe
+    raise e
+
+except psycopg2.Error as e:
+    if 'conn' in locals():
+        conn.rollback()  
+    print(f"Erreur SQL : {e}")
+    raise e
+
+finally:
+    if 'cursor' in locals():  # vérifie que cursor existe avant de le fermer
+        cursor.close()
+    if 'conn' in locals():    
+        conn.close()
