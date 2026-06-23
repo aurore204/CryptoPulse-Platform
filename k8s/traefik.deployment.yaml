@@ -1,0 +1,47 @@
+apiVersion: apps/v1 
+kind: Deployment 
+metadata: 
+  name: traefik-deployment 
+  namespace: kube-public 
+spec: 
+  replicas: 2 
+  selector: 
+    matchLabels: 
+      app: traefik 
+  template: 
+    metadata: 
+      labels: 
+        app: traefik 
+    spec: 
+      serviceAccountName: traefik-ingress-controller 
+      affinity: 
+        podAntiAffinity: 
+          requiredDuringSchedulingIgnoredDuringExecution: 
+          - labelSelector: 
+              matchExpressions: 
+              - key: app 
+                operator: In 
+                values: 
+                - traefik 
+            topologyKey: "kubernetes.io/hostname" # Empêche d'avoir 2 pods Traefik sur la même machine 
+      containers: 
+      - name: traefik 
+        image: traefik:2.7 
+        args: 
+          - "--api.insecure=true" 
+          - "--api.dashboard=true" 
+          - "--providers.kubernetesingress=true" 
+          - "--entrypoints.web.address=:80" 
+        ports: 
+        - name: web 
+          containerPort: 80 
+        - name: admin-dashboard 
+          containerPort: 8080 
+
+ 
+
+ 
+ 
+
+ 
+ 
