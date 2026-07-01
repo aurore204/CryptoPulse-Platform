@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crypto-etl-cronjob
+  namespace: cryptopulse
+spec:
+  # S'exécute toutes les 5 minutes (syntaxe cron Linux classique)
+  schedule: "*/5 * * * *" 
+  
+  # Sécurité : Si un job précédent traîne, on interdit d'en lancer un deuxième en parallèle
+  concurrencyPolicy: Forbid 
+  
+  # Historique : Garde les logs des 3 derniers succès et échecs pour le debug
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: etl-worker
+            image: cryptopulse-etl:latest
+            imagePullPolicy: Never # Force l'utilisation de l'image Docker locale
+            envFrom:
+            - configMapRef:
+                name: postgres-config-map  
+            - secretRef:
+                name: crypto-secret
+          
+          # Indispensable pour un Job : Quoi faire si le conteneur crash
+          restartPolicy: OnFailure
