@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
       - name: api
-        image: cryptopulse-api:latest
-        imagePullPolicy: Never
+        image: cryptopulse-api:v1.0.0  
+        imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
             name: postgres-config-map  
