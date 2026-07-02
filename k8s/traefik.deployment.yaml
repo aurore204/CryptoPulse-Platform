@@ -4,7 +4,7 @@ metadata:
   name: traefik-deployment 
   namespace: kube-public 
 spec: 
-  replicas: 2 
+  replicas: 1
   selector: 
     matchLabels: 
       app: traefik 

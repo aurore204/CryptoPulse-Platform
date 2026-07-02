@@ -5,7 +5,7 @@ metadata:
   name: traefik-service 
   namespace: kube-public 
 spec: 
-  type: NodePort 
+  type: LoadBalancer 
   selector: 
     app: traefik 
   ports: 
